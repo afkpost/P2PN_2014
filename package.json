@@ -1,0 +1,7 @@
+{
+    "name": "P2PN_2014",
+    "version": "0.0.1",
+    "dependencies": {
+        "xmlrpc": "1.2.0"
+    }
+}
