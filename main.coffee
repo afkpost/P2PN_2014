@@ -3,54 +3,62 @@ xmlrpc = require('xmlrpc')
 constants = require('./constants')
 os = require('os')
 
+debug = false
+
 args = process.argv[2...]
 
 self = {}
 
+# Identifier
+self.id = "P" + args[0]
+
 # Parse port
-self.port = parseInt(args[0]) or 8080
+self.port = parseInt(args[1]) or 8080
+
+# Parse number of capacity
+self.capacity = parseInt(args[2]) or 5
+
 
 # Find IP
 ifaces = os.networkInterfaces();
-[[self.host]] = for dev of ifaces
-    for details in ifaces[dev] when details.family is "IPv4" and details.address isnt "127.0.0.1"    
-        details.address 
-
-# Broadcast address
-[first..., last] = self.host.split "."
-last = "255"
-broadcast = [first..., last].join "."
+for dev of ifaces
+    for details in ifaces[dev] when details.family is "IPv4" and not details.internal
+        self.host = details.address 
 
 # peers
 knownPeers = []
 
 same = (p1, p2) ->
-    p1.host is p1.host and p1.port is p2.port
+    p1.host is p2.host and p1.port is p2.port
 
 knows = (peer) ->
     (knownPeers.findOne (p) -> same(p, peer))?
     
 addPeer = (peer) ->
-    return if same peer, self
-    knownPeers.push {
-        host: peer.host,
-        port: peer.port
-    }
+    return if (same peer, self) or (knows peer)
+    knownPeers.push peer
+    
+removePeer = (peer) ->
+    knownPeers.remove peer
 
 #funtions
-dummy = (err) ->
+removeOnError = (peer, err) ->
+    (err) ->
+        removePeer peer if err.code?
 
 doPong = (details) ->
+    console.log "ponging %s:%s", details.host, details.port if debug
     client = xmlrpc.createClient details
-    client.methodCall constants.PONG, [self, knownPeers], dummy
+    client.methodCall constants.PONG, [self, knownPeers], removeOnError(details)
 
 doPing = (details) ->
+    console.log "pinging %s:%s", details.host, details.port if debug
     client = xmlrpc.createClient details
-    client.methodCall constants.PING, [self], dummy
+    client.methodCall constants.PING, [self], removeOnError(details)
 
 printKnownPeers = () ->
     console.log "Known peers"
-    console.log peer for peer in knownPeers
+    console.log peer.id for peer in knownPeers
    
 # server
 server = xmlrpc.createServer self
@@ -59,25 +67,27 @@ server = xmlrpc.createServer self
 server.on constants.PING, (err, [peer], callback) ->
     callback() # acknowledge
     doPong peer
-    addPeer peer if not knows peer
+    addPeer peer
 
 server.on constants.PONG, (err, [sender, peers], callback) ->
     callback() # acknowledge
-    addPeer sender if not knows sender
-    for peer in peers when not knows peer
-        addPeer peer
+    addPeer sender
+    for peer in peers when (not knows peer) and (not same peer, self)
         doPing peer
         
         
 console.log "Listening on %s:%s", self.host, self.port
         
 # helpers
-parseHello = (address = "#{ broadcast }:2210", done) ->
-    [host, port] = address.trim().split ":"
-    done {
-        host: host,
-        port: port
-    }
+hello = (address) ->
+    if address
+        [host, port] = address.trim().split ":"
+        doPing {
+            host: host,
+            port: port
+        }
+    else
+        doPing peer for peer in knownPeers
         
 # input
 process.stdout.write "> "
@@ -88,7 +98,7 @@ process.stdin.on "data", (data) ->
     [command, address] = data.split " "
     command = command.trim()
     switch command
-        when constants.HELLO then parseHello address, doPing
+        when constants.HELLO then hello address
         when constants.PLIST then printKnownPeers()
         else console.log "unknown command: #{ command }"
             
