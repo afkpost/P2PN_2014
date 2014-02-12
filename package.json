@@ -3,6 +3,7 @@
     "version": "0.0.1",
     "dependencies": {
         "xmlrpc": "1.2.0",
-        "array-sugar": "0.2.4"
+        "array-sugar": "0.2.4",
+        "async": "0.2.10"
     }
 }
