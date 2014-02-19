@@ -12,7 +12,7 @@ debug = true
 
 same = (p1, p2) =>
     p1.host is p2.host and p1.port is p2.port
-    
+count = 0
     
 class Peer
     constructor: (@port, @id, @capacity = 5, loggers = []) ->
@@ -21,6 +21,7 @@ class Peer
         knownPeers = []
         friends = []
         pendingFriends = []
+        client = null
         
         log = (msg) =>
             logger.log msg for logger in loggers
@@ -43,7 +44,7 @@ class Peer
             remCap--
         
         unFriend = (p) =>
-            log "%s is unfriending %s", @id, p.id
+            log "#{@id} is unfriending #{p.id}", @id, p.id
             oldFriend = friends.findOne (p1) => same p, p1
             if oldFriend?
                 remCap++
@@ -61,7 +62,11 @@ class Peer
             
         addPeer = (peer) =>
             return if (same peer, this) or (knows peer)
-            knownPeers.push peer
+            knownPeers.push
+                host: peer.host
+                port: peer.port
+                id: peer.id
+                capacity: peer.capacity
             
         removePeer = (peer) =>
             try
@@ -75,17 +80,20 @@ class Peer
             (err) =>
                 removePeer peer if err
         
+        createClient = (peer) =>
+            client.options.port = peer.port
+            client.options.host = peer.host
+            return client
+        
         doPong = (peer) =>
             log "ponging #{ peer.host }:#{ peer.port}" if debug
-            if (not peer.host?)
-                log typeof peer
-            client = xmlrpc.createClient peer
-            client.methodCall constants.PONG, [this, knownPeers], removeOnError(peer)
+            client = createClient peer
+            client.methodCall constants.PONG, [this, knownPeers], (err) => removeOnError(peer)
         
         doPing = (peer, self) =>
             log "pinging #{ peer.host }:#{ peer.port}" if debug
-            client = xmlrpc.createClient peer
-            client.methodCall constants.PING, [self], removeOnError(peer)
+            client = createClient peer
+            client.methodCall constants.PING, [self], (err) => removeOnError(peer)
             
         doForceFriend = (peer, token, done) =>
             log "#{@id} is forcefriending #{peer.id}"
@@ -98,7 +106,7 @@ class Peer
                 reserved++
                 addFriend peer
                 pendingFriends.push peer
-                client = xmlrpc.createClient peer
+                client = createClient peer
                 client.methodCall constants.FORCE_FRIEND, [this, token], (err, args) =>
                     pendingFriends.remove peer
                     log "#{@id} got reply from #{peer.id}"
@@ -116,7 +124,7 @@ class Peer
                 
         doFriend = (peer, token, done) =>
             log "#{@id} is trying to friend #{peer.id}"
-            client = xmlrpc.createClient peer
+            client = createClient peer
             addFriend peer
             pendingFriends.push peer
             client.methodCall constants.FRIEND, [this, token], (err, res) =>
@@ -134,13 +142,17 @@ class Peer
             if peer?
                 log "unfriending #{peer.id}"
                 unFriend peer
-                client = xmlrpc.createClient peer
+                client = createClient peer
                 client.methodCall constants.UNFRIEND, [this, newPeer, token], removeOnError(peer)
         
            
         # server
         server = xmlrpc.createServer {
             port: @port
+        }
+        client = xmlrpc.createClient {
+            port: @port
+            host: "localhost"
         }
         
         #rounting
@@ -240,7 +252,7 @@ class Peer
                 if not peer?
                     done()
                     return
-                client = xmlrpc.createClient peer
+                client = createClient peer
                 client.methodCall constants.GRAPH, [], (err, g) =>
                     log "got response from #{peer.id}"
                     if (err)
