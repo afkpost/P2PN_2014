@@ -1,1 +1,1 @@
-hello 10.11.82.10:8000
+hello localhost:8000
