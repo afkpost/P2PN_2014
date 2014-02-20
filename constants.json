@@ -11,6 +11,7 @@
     "UNFRIEND": "unfriend",
     "FORCE_FRIEND": "forcefriend",
     "GRAPH": "graph",
+    "DELETE_TOKEN": "token",
     "limits": {
         "HIGH": 8
     },

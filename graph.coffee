@@ -29,10 +29,10 @@ class Graph
 class Node
     constructor: (@id, @capacity) ->
         
-    equals: (node) ->
+    equals: (node) =>
         node.id is @id
     
-    print: () ->
+    print: () =>
         '"' + @id + '(' + @capacity + ')"'
     
 class Edge

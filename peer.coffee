@@ -39,17 +39,16 @@ class Peer
         # helpers
         addFriend = (p) =>
             log "is friends already" if isFriend p
-            throw "Add frieds sucks" if remCap <= 0
+            throw "Add friends sucks" if remCap <= 0
             friends.push p
             remCap--
             
         addPendingFriend = (p) =>
-            throw "Add pending frieds sucks" if remCap <= 0
+            throw "Add pending friends sucks" if remCap <= 0
             pendingFriends.push p
             remCap--
         
         unFriend = (p) =>
-            log "#{@id} is unfriending #{p.id}", @id, p.id
             oldFriend = friends.findOne (p1) => same p, p1
             if oldFriend?
                 remCap++
@@ -109,6 +108,7 @@ class Peer
         doPing = (peer, self) =>
             log "pinging #{ peer.host }:#{ peer.port}" if debug
             client = createClient peer
+            addPeer peer
             client.methodCall constants.PING, [self], (err) => removeOnError(peer)
             
         doForceFriend = (peer, token, done) =>
@@ -121,19 +121,18 @@ class Peer
                 remCap-- #reserve spot for peer and maybe kicked peer
                 addPendingFriend peer
                 client = createClient peer
-                client.methodCall constants.FORCE_FRIEND, [this, token], (err, args) =>
+                client.methodCall constants.FORCE_FRIEND, [this, token], (err, kickedPeer) =>
                     removePendingFriend peer
-                    log "#{@id} got reply from #{peer.id}"
                     if err?
+                        log "#{@id} failed request to #{peer.id}"
                         removePeer peer
                     else
                         addFriend peer
-                        kickedPeer = args[0]
-                        if not kickedPeer #unreserve spot for kicked peer - no one is kicked!!
-                            remCap++ 
-                            log "#{@id}: #{peer.id} did not kick a peer"
-                        else
+                        if kickedPeer 
                             log "#{@id}: #{peer.id} kicked a peer"
+                        else 
+                            remCap++ #unreserve spot for kicked peer - no one is kicked!!
+                            log "#{@id}: #{peer.id} did not kick a peer"
                     done(err)
                 
         doFriend = (peer, token, done) =>
@@ -153,11 +152,14 @@ class Peer
                 
         doUnfriend = (peer, newPeer, token) =>
             if peer?
-                log "unfriending #{peer.id}"
+                log "#{@id} is unfriending #{peer.id}"
                 unFriend peer
                 client = createClient peer
-                client.methodCall constants.UNFRIEND, [this, newPeer, token], removeOnError(peer)
+                client.methodCall constants.UNFRIEND, [this, newPeer, token], removeOnError peer
         
+        deleteToken = (peer, token) =>
+            client = createClient peer
+            client.methodCall constants.DELETE_TOKEN, [token], removeOnError peer
            
         # server
         server = xmlrpc.createServer {
@@ -191,7 +193,7 @@ class Peer
                 pendingFriends.forEach (p) =>
                     candidates.remove p
                     
-                candidates.sort (p1, p2) => p1.capacity - p2.capacity
+                candidates.sort (p1, p2) => p2.capacity - p1.capacity
                 oldFriend = candidates.first
                 doUnfriend oldFriend, peer, token
                 if oldFriend?
@@ -205,7 +207,9 @@ class Peer
             callback null
             if isFriend oldFriend
                 unFriend oldFriend
-            doFriend peer, token, () => 
+                doFriend peer, token, () =>
+            else
+                deleteToken peer, token if token
             
         server.on constants.FRIEND, (err, [peer, token], callback) =>
             if token? #TODO: check token
@@ -222,6 +226,11 @@ class Peer
         server.on constants.GRAPH, (err, [], callback) =>
             log "graph"
             callback null, @getGraph()
+            
+        server.on constants.TOKEN, (err, [token], callback) =>
+            callback null
+            if token? #TODO: check token
+                remCap++
                 
         log "Listening on #{ @host}: #{ @port }"
         
@@ -269,7 +278,7 @@ class Peer
                 client.methodCall constants.GRAPH, [], (err, g) =>
                     log "got response from #{peer.id}"
                     if (err)
-                        done()
+                        done(err)
                     else
                         g.nodes.forEach (n) =>
                             graph.addNode (new Node n.id, n.capacity)
@@ -284,7 +293,9 @@ class Peer
                 
             async.each peers, handlePeer, (err) =>
                 # handle output
-                if out?
+                if err?
+                    log "error in printing" + err
+                else if out?
                     fs.writeFile out, graph.print()
                 else
                     log "reserved: " + reserved + "/" + remCap + "\n" + graph.print()

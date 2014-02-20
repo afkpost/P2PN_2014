@@ -18,10 +18,10 @@
 
   numberOfPeers = 12;
 
-  caps = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 7, 8, 10];
+  caps = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 7, 8, 10].reverse();
 
   if (cluster.isMaster) {
-    p = new Peer(8000, "Px", caps[0], [new FileLogger("logs/px.txt")]);
+    p = new Peer(8000, "Px", 10, [new FileLogger("logs/px.txt")]);
     new Controllers.CLI(p);
     for (i = _i = 0; _i < 8; i = ++_i) {
       cluster.fork({
@@ -45,7 +45,7 @@
       new Controllers.Simple(peer);
       i++;
       remaining--;
-      return setTimeout(done, 10000);
+      return setTimeout(done, 500);
     };
     async.until(allStarted, startPeer, function() {});
   }

@@ -31,11 +31,11 @@
 
   Peer = (function() {
     function Peer(port, id, capacity, loggers) {
-      var addFriend, addPeer, addPendingFriend, client, createClient, createToken, details, dev, doForceFriend, doFriend, doPing, doPong, doUnfriend, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, reserved, server, unFriend, _i, _len, _ref,
+      var addFriend, addPeer, addPendingFriend, client, createClient, createToken, deleteToken, details, dev, doForceFriend, doFriend, doPing, doPong, doUnfriend, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, reserved, server, unFriend, _i, _len, _ref,
         _this = this;
       this.port = port;
       this.id = id;
-      this.capacity = capacity != null ? capacity : 5;
+      this.capacity = capacity != null ? capacity : 10;
       if (loggers == null) {
         loggers = [];
       }
@@ -72,21 +72,20 @@
           log("is friends already");
         }
         if (remCap <= 0) {
-          throw "Add frieds sucks";
+          throw "Add friends sucks";
         }
         friends.push(p);
         return remCap--;
       };
       addPendingFriend = function(p) {
         if (remCap <= 0) {
-          throw "Add pending frieds sucks";
+          throw "Add pending friends sucks";
         }
         pendingFriends.push(p);
         return remCap--;
       };
       unFriend = function(p) {
         var oldFriend;
-        log("" + _this.id + " is unfriending " + p.id, _this.id, p.id);
         oldFriend = friends.findOne(function(p1) {
           return same(p, p1);
         });
@@ -172,6 +171,7 @@
           log("pinging " + peer.host + ":" + peer.port);
         }
         client = createClient(peer);
+        addPeer(peer);
         return client.methodCall(constants.PING, [self], function(err) {
           return removeOnError(peer);
         });
@@ -188,20 +188,18 @@
           remCap--;
           addPendingFriend(peer);
           client = createClient(peer);
-          return client.methodCall(constants.FORCE_FRIEND, [_this, token], function(err, args) {
-            var kickedPeer;
+          return client.methodCall(constants.FORCE_FRIEND, [_this, token], function(err, kickedPeer) {
             removePendingFriend(peer);
-            log("" + _this.id + " got reply from " + peer.id);
             if (err != null) {
+              log("" + _this.id + " failed request to " + peer.id);
               removePeer(peer);
             } else {
               addFriend(peer);
-              kickedPeer = args[0];
-              if (!kickedPeer) {
+              if (kickedPeer) {
+                log("" + _this.id + ": " + peer.id + " kicked a peer");
+              } else {
                 remCap++;
                 log("" + _this.id + ": " + peer.id + " did not kick a peer");
-              } else {
-                log("" + _this.id + ": " + peer.id + " kicked a peer");
               }
             }
             return done(err);
@@ -227,11 +225,15 @@
       };
       doUnfriend = function(peer, newPeer, token) {
         if (peer != null) {
-          log("unfriending " + peer.id);
+          log("" + _this.id + " is unfriending " + peer.id);
           unFriend(peer);
           client = createClient(peer);
           return client.methodCall(constants.UNFRIEND, [_this, newPeer, token], removeOnError(peer));
         }
+      };
+      deleteToken = function(peer, token) {
+        client = createClient(peer);
+        return client.methodCall(constants.DELETE_TOKEN, [token], removeOnError(peer));
       };
       server = xmlrpc.createServer({
         port: this.port
@@ -277,7 +279,7 @@
             return candidates.remove(p);
           });
           candidates.sort(function(p1, p2) {
-            return p1.capacity - p2.capacity;
+            return p2.capacity - p1.capacity;
           });
           oldFriend = candidates.first;
           doUnfriend(oldFriend, peer, token);
@@ -298,8 +300,12 @@
         callback(null);
         if (isFriend(oldFriend)) {
           unFriend(oldFriend);
+          return doFriend(peer, token, function() {});
+        } else {
+          if (token) {
+            return deleteToken(peer, token);
+          }
         }
-        return doFriend(peer, token, function() {});
       });
       server.on(constants.FRIEND, function(err, _arg, callback) {
         var peer, token;
@@ -323,6 +329,14 @@
         _arg;
         log("graph");
         return callback(null, _this.getGraph());
+      });
+      server.on(constants.TOKEN, function(err, _arg, callback) {
+        var token;
+        token = _arg[0];
+        callback(null);
+        if (token != null) {
+          return remCap++;
+        }
       });
       log("Listening on " + this.host + ": " + this.port);
       this.hello = function(_arg, done) {
@@ -382,7 +396,7 @@
           return client.methodCall(constants.GRAPH, [], function(err, g) {
             log("got response from " + peer.id);
             if (err) {
-              return done();
+              return done(err);
             } else {
               g.nodes.forEach(function(n) {
                 return graph.addNode(new Node(n.id, n.capacity));
@@ -403,7 +417,9 @@
           }
         }
         return async.each(peers, handlePeer, function(err) {
-          if (out != null) {
+          if (err != null) {
+            log("error in printing" + err);
+          } else if (out != null) {
             fs.writeFile(out, graph.print());
           } else {
             log("reserved: " + reserved + "/" + remCap + "\n" + graph.print());
