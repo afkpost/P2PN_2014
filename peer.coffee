@@ -42,6 +42,11 @@ class Peer
             throw "Add frieds sucks" if remCap <= 0
             friends.push p
             remCap--
+            
+        addPendingFriend = (p) =>
+            throw "Add pending frieds sucks" if remCap <= 0
+            pendingFriends.push p
+            remCap--
         
         unFriend = (p) =>
             log "#{@id} is unfriending #{p.id}", @id, p.id
@@ -52,6 +57,14 @@ class Peer
             else
                 throw 'unfriend sucks'
         
+        removePendingFriend = (p) =>
+            oldFriend = pendingFriends.findOne (p1) => same p, p1
+            if oldFriend?
+                remCap++
+                pendingFriends.remove oldFriend
+            else
+                throw 'remove pending friend sucks'
+        
         createToken = () => @id
         
         knows = (peer) =>
@@ -59,6 +72,9 @@ class Peer
             
         isFriend = (peer) =>
             (friends.findOne (p) => same p, peer)?
+            
+        isPendingFriend = (peer) =>
+            (pendingFriends.findOne (p) => same p, peer)?
             
         addPeer = (peer) =>
             return if (same peer, this) or (knows peer)
@@ -103,38 +119,35 @@ class Peer
                 done()
             else
                 remCap-- #reserve spot for peer and maybe kicked peer
-                reserved++
-                addFriend peer
-                pendingFriends.push peer
+                addPendingFriend peer
                 client = createClient peer
                 client.methodCall constants.FORCE_FRIEND, [this, token], (err, args) =>
-                    pendingFriends.remove peer
+                    removePendingFriend peer
                     log "#{@id} got reply from #{peer.id}"
-                    if not err or not err.code?
+                    if err?
+                        removePeer peer
+                    else
+                        addFriend peer
                         kickedPeer = args[0]
                         if not kickedPeer #unreserve spot for kicked peer - no one is kicked!!
                             remCap++ 
-                            reserved--
                             log "#{@id}: #{peer.id} did not kick a peer"
                         else
                             log "#{@id}: #{peer.id} kicked a peer"
-                    else
-                        removePeer peer
                     done(err)
                 
         doFriend = (peer, token, done) =>
             log "#{@id} is trying to friend #{peer.id}"
             client = createClient peer
-            addFriend peer
-            pendingFriends.push peer
+            addPendingFriend peer
             client.methodCall constants.FRIEND, [this, token], (err, res) =>
-                pendingFriends.remove peer
+                removePendingFriend peer
                 if err?
                     removePeer peer
                 else if res is constants.errors.ENOUGH_FRIENDS
-                    unFriend peer
                     log "#{@id} is NOT friend with #{peer.id}"
                 else
+                    addFriend peer
                     log "#{@id} is now friend with #{peer.id}"
                 done()
                 
@@ -170,7 +183,7 @@ class Peer
                     doPing peer, this
                 
         server.on constants.FORCE_FRIEND, (err, [peer, token], callback) =>
-            if remCap > 0 or isFriend peer
+            if remCap > 0 or isFriend peer or isPendingFriend peer
                 log "#{@id} accepts forcefriend from #{peer.id}. No one kicked"
                 callback null, false
             else
@@ -186,7 +199,7 @@ class Peer
                 else
                     log "buuh"
                 callback null, true
-            addFriend peer if not isFriend peer
+            addFriend peer if not (isFriend peer or isPendingFriend peer)
         
         server.on constants.UNFRIEND, (err, [oldFriend, peer, token], callback) =>
             callback null
@@ -198,9 +211,9 @@ class Peer
             if token? #TODO: check token
                 remCap++
                 reserved--
-            if remCap > 0 or isFriend peer
+            if remCap > 0 or isFriend peer or isPendingFriend peer
                 log "#{@id} accepts #{peer.id}"
-                addFriend peer if not isFriend peer
+                addFriend peer if not (isFriend peer or isPendingFriend peer)
                 callback null
             else
                 log "#{@id} rejects #{peer.id}"
@@ -345,19 +358,21 @@ class Peer
         joinEvery30Second = () =>
             setTimeout () =>
                 console.log "### %s TICK ###", @id
-                @joinNeighbourhood joinEvery30Second
+                @joinNeighbourhood () ->
             , 15000
                     
         setTimeout () =>
             @joinNeighbourhood joinEvery30Second
         , 2000
         
+        ###
         setInterval () =>
             async.each friends, (f, done) =>
                 doPing f, null
                 done()
             , () =>
         , 10000
+        ###
 
 module.exports = Peer
 
