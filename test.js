@@ -16,7 +16,7 @@
 
   console.log("started");
 
-  numberOfPeers = 12;
+  numberOfPeers = 6;
 
   caps = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 7, 8, 10].reverse();
 

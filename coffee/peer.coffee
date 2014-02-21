@@ -1,5 +1,4 @@
 require('array-sugar')
-xmlrpc = require('xmlrpc')
 constants = require('./constants')
 os = require('os')
 async = require('async')
@@ -7,6 +6,7 @@ fs = require('fs')
 Graph = require('./graph').Graph
 Node = require('./graph').Node
 Edge = require('./graph').Edge
+Network = require('./network')
 
 debug = true
 
@@ -16,12 +16,13 @@ count = 0
     
 class Peer
     constructor: (@port, @id, @capacity = 5, loggers = []) ->
+        
         remCap = @capacity
         reserved = 0
         knownPeers = []
         friends = []
         pendingFriends = []
-        client = null
+        network = new Network @port
         
         log = (msg) =>
             logger.log msg for logger in loggers
@@ -91,37 +92,28 @@ class Peer
             knownPeers.remove peer
         
         #funtions
-        removeOnError = (peer, err) =>
+        removeOnError = (peer) =>
             (err) =>
                 removePeer peer if err
         
-        createClient = (peer) =>
-            client.options.port = peer.port
-            client.options.host = peer.host
-            return client
-        
         doPong = (peer) =>
-            log "ponging #{ peer.host }:#{ peer.port}" if debug
-            client = createClient peer
-            client.methodCall constants.PONG, [this, knownPeers], (err) => removeOnError(peer)
+            log "ponging #{ peer.host }:#{ peer.port}"
+            network.pong peer, this, knownPeers, removeOnError(peer)
         
         doPing = (peer, self) =>
             log "pinging #{ peer.host }:#{ peer.port}" if debug
-            client = createClient peer
             addPeer peer
-            client.methodCall constants.PING, [self], (err) => removeOnError(peer)
+            network.ping peer, self, removeOnError(peer)
             
         doForceFriend = (peer, token, done) =>
             log "#{@id} is forcefriending #{peer.id}"
-            log "force friending #{ peer.id }" if debug
             if isFriend peer
                 log "#{@id} and #{peer.id} are already friends"
                 done()
             else
                 remCap-- #reserve spot for peer and maybe kicked peer
                 addPendingFriend peer
-                client = createClient peer
-                client.methodCall constants.FORCE_FRIEND, [this, token], (err, kickedPeer) =>
+                network.forceFriend peer, this, token, (err, kickedPeer) =>
                     removePendingFriend peer
                     if err?
                         log "#{@id} failed request to #{peer.id}"
@@ -137,9 +129,8 @@ class Peer
                 
         doFriend = (peer, token, done) =>
             log "#{@id} is trying to friend #{peer.id}"
-            client = createClient peer
             addPendingFriend peer
-            client.methodCall constants.FRIEND, [this, token], (err, res) =>
+            network.friend peer, this, token, (err, res) =>
                 removePendingFriend peer
                 if err?
                     removePeer peer
@@ -154,40 +145,28 @@ class Peer
             if peer?
                 log "#{@id} is unfriending #{peer.id}"
                 unFriend peer
-                client = createClient peer
-                client.methodCall constants.UNFRIEND, [this, newPeer, token], removeOnError peer
+                network.unfriend peer, this, newPeer, token, removeOnError peer
         
-        deleteToken = (peer, token) =>
-            client = createClient peer
-            client.methodCall constants.DELETE_TOKEN, [token], removeOnError peer
-           
-        # server
-        server = xmlrpc.createServer {
-            port: @port
-        }
-        client = xmlrpc.createClient {
-            port: @port
-            host: "localhost"
-        }
+        doDeleteToken = (peer, token) =>
+            log "#{@id} tells #{peer.id} to delete token"
+            network.deleteToken peer, token, removeOnError peer
         
         #rounting
-        server.on constants.PING, (err, [peer], callback) =>
-            callback null # acknowledge
+        network.on constants.PING, (peer) =>
             if (peer? and peer isnt "")
                 doPong peer
                 addPeer peer
         
-        server.on constants.PONG, (err, [sender, peers], callback) =>
-            callback null # acknowledge
+        network.on constants.PONG, (sender, peers) =>
             addPeer sender
             for peer in peers 
                 if (not knows peer) and (not same peer, this)
                     doPing peer, this
                 
-        server.on constants.FORCE_FRIEND, (err, [peer, token], callback) =>
+        network.on constants.FORCE_FRIEND, (peer, token, callback) =>
             if remCap > 0 or isFriend peer or isPendingFriend peer
                 log "#{@id} accepts forcefriend from #{peer.id}. No one kicked"
-                callback null, false
+                callback false
             else
                 candidates = friends.copy()
                 pendingFriends.forEach (p) =>
@@ -200,39 +179,35 @@ class Peer
                     log "#{@id} accepts forcefriend from #{peer.id}. #{oldFriend.id} kicked (token #{token})"
                 else
                     log "buuh"
-                callback null, true
+                callback true
             addFriend peer if not (isFriend peer or isPendingFriend peer)
         
-        server.on constants.UNFRIEND, (err, [oldFriend, peer, token], callback) =>
-            callback null
+        network.on constants.UNFRIEND, (oldFriend, peer, token) =>
             if isFriend oldFriend
                 unFriend oldFriend
                 doFriend peer, token, () =>
             else
-                deleteToken peer, token if token
+                doDeleteToken peer, token if token
             
-        server.on constants.FRIEND, (err, [peer, token], callback) =>
+        network.on constants.FRIEND, (peer, token, callback) =>
             if token? #TODO: check token
                 remCap++
                 reserved--
             if remCap > 0 or isFriend peer or isPendingFriend peer
                 log "#{@id} accepts #{peer.id}"
                 addFriend peer if not (isFriend peer or isPendingFriend peer)
-                callback null
+                callback()
             else
                 log "#{@id} rejects #{peer.id}"
-                callback null, constants.errors.ENOUGH_FRIENDS
+                callback constants.errors.ENOUGH_FRIENDS
                 
-        server.on constants.GRAPH, (err, [], callback) =>
+        network.on constants.GRAPH, (callback) =>
             log "graph"
-            callback null, @getGraph()
+            callback @getGraph()
             
-        server.on constants.TOKEN, (err, [token], callback) =>
-            callback null
+        network.on constants.DELETE_TOKEN, (token) =>
             if token? #TODO: check token
                 remCap++
-                
-        log "Listening on #{ @host}: #{ @port }"
         
         # helpers
         @hello = ([address], done) =>
@@ -274,14 +249,17 @@ class Peer
                 if not peer?
                     done()
                     return
-                client = createClient peer
-                client.methodCall constants.GRAPH, [], (err, g) =>
+                network.createGraph peer, (err, g) =>
                     log "got response from #{peer.id}"
                     if (err)
                         done(err)
                     else
                         g.nodes.forEach (n) =>
-                            graph.addNode (new Node n.id, n.capacity)
+                            if n.id? and n.capacity?
+                                graph.addNode (new Node n.id, n.capacity)
+                            else
+                                log "got weird graph from #{peer.id}"
+                            
                         g.edges.forEach (e) =>
                             e.n1 = new Node e.n1.id, e.n1.capacity
                             e.n2 = new Node e.n2.id, e.n2.capacity

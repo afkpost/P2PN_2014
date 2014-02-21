@@ -7,7 +7,7 @@ async = require 'async'
 
 console.log "started"
 
-numberOfPeers = 12
+numberOfPeers = 6
 caps = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 7, 8, 10].reverse()
 if cluster.isMaster
     p = new Peer(8000, "Px", 10, [new FileLogger "logs/px.txt"])
