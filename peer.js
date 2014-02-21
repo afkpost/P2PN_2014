@@ -31,7 +31,7 @@
 
   Peer = (function() {
     function Peer(port, id, capacity, loggers) {
-      var addFriend, addPeer, addPendingFriend, createToken, details, dev, doDeleteToken, doForceFriend, doFriend, doPing, doPong, doUnfriend, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, network, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, reserved, unFriend, _i, _len, _ref,
+      var addFriend, addPeer, addPendingFriend, createToken, details, dev, doDeleteToken, doForceFriend, doFriend, doPing, doPong, doUnfriend, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, network, nextId, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, reserved, seenQueries, sentQueries, unFriend, _i, _len, _ref,
         _this = this;
       this.port = port;
       this.id = id;
@@ -502,11 +502,54 @@
           }
         }
       };
+      nextId = 0;
+      sentQueries = [];
+      seenQueries = {};
+      this.search = function(queries) {
+        return queries.forEach(function(query) {
+          log("seaching for " + query);
+          id = nextId++;
+          details = {
+            ttl: constants.TTL,
+            id: id
+          };
+          sentQueries[id] = query;
+          return friends.forEach(function(peer) {
+            return network.query(peer, _this, query, details, removeOnError(peer));
+          });
+        });
+      };
+      network.on(constants.QUERY, function(origin, query, details) {
+        var bucket, _name;
+        if (seenQueries[_name = origin.id] == null) {
+          seenQueries[_name] = [];
+        }
+        bucket = seenQueries[origin.id];
+        if (bucket.contains(details.id)) {
+          return;
+        }
+        log("query (" + query + ") from " + origin.id + ". Id: " + details.id + ", TTL: " + details.ttl);
+        bucket.push(details.id);
+        if (query.toLowerCase() === _this.id.toLowerCase()) {
+          return network.queryResult(origin, _this, details, removeOnError(origin));
+        } else if (details.ttl > 1) {
+          details.ttl--;
+          return friends.forEach(function(peer) {
+            return network.query(peer, origin, query, details, removeOnError(peer));
+          });
+        }
+      });
+      network.on(constants.QUERY_RESULT, function(sender, details) {
+        var query;
+        id = details.id;
+        query = sentQueries[id];
+        return log("found " + query + " at " + sender.id);
+      });
       joinEvery30Second = function() {
         return setTimeout(function() {
           console.log("### %s TICK ###", _this.id);
           return _this.joinNeighbourhood(function() {});
-        }, 15000);
+        }, 5000);
       };
       setTimeout(function() {
         return _this.joinNeighbourhood(joinEvery30Second);

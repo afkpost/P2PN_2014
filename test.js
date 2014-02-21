@@ -16,12 +16,12 @@
 
   console.log("started");
 
-  numberOfPeers = 6;
+  numberOfPeers = 2;
 
   caps = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 7, 8, 10].reverse();
 
   if (cluster.isMaster) {
-    p = new Peer(8000, "Px", 10, [new FileLogger("logs/px.txt")]);
+    p = new Peer(8000, "Px", 10, [console, new FileLogger("logs/px.txt")]);
     new Controllers.CLI(p);
     for (i = _i = 0; _i < 8; i = ++_i) {
       cluster.fork({

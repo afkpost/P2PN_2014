@@ -41,6 +41,14 @@ class Network extends EventEmitter
         @createGraph = (receiver, done) =>
             client = createClient receiver
             client.methodCall constants.GRAPH, [], done
+            
+        @query = (receiver, origin, query, details, done) =>
+            client = createClient receiver
+            client.methodCall constants.QUERY, [origin, query, details], done
+            
+        @queryResult = (receiver, result, details, done) =>
+            client = createClient receiver
+            client.methodCall constants.QUERY_RESULT, [result, details], done
         
         
         #rounting
@@ -68,6 +76,15 @@ class Network extends EventEmitter
         server.on constants.DELETE_TOKEN, (err, [token], callback) =>
             callback null # acknowledge
             @emit constants.DELETE_TOKEN, token
+            
+        server.on constants.QUERY, (err, [origin, query, details], callback) =>
+            callback null # acknowledge
+            @emit constants.QUERY, origin, query, details
+            
+        server.on constants.QUERY_RESULT, (err, [result, details], callback) =>
+            callback null # acknowledge
+            @emit constants.QUERY_RESULT, result, details
+            
         
         
         log "Listening on #{ @port }"

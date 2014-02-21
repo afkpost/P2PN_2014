@@ -343,12 +343,53 @@ class Peer
                 else
                     startLoop()
                     
+        
+        # searching
+        nextId = 0
+        sentQueries = []
+        seenQueries = {}
+        
+        @search = (queries) =>
+            queries.forEach (query) =>
+                log "seaching for #{query}"
+                id = nextId++
+                details =
+                    ttl: constants.TTL
+                    id: id
+                sentQueries[id] = query
+                friends.forEach (peer) =>
+                    network.query peer, this, query, details, removeOnError peer
+            
+            
+        network.on constants.QUERY, (origin, query, details) =>
+            seenQueries[origin.id] ?= []
+            bucket = seenQueries[origin.id]
+            return if bucket.contains details.id #ignore query
+            log "query (#{query}) from #{origin.id}. Id: #{details.id}, TTL: #{details.ttl}"
+            
+            
+            bucket.push details.id
+            if query.toLowerCase() is @id.toLowerCase() #TODO: search for resources
+                network.queryResult origin, this, details, removeOnError origin
+            else if details.ttl > 1
+                details.ttl--
+                friends.forEach (peer) =>
+                    network.query peer, origin, query, details, removeOnError peer
+                    
+        network.on constants.QUERY_RESULT, (sender, details) =>
+            id = details.id
+            query = sentQueries[id]
+            log "found #{query} at #{sender.id}"
+                
+                
+            
+                    
                     
         joinEvery30Second = () =>
             setTimeout () =>
                 console.log "### %s TICK ###", @id
                 @joinNeighbourhood () ->
-            , 15000
+            , 5000
                     
         setTimeout () =>
             @joinNeighbourhood joinEvery30Second

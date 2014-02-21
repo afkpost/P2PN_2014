@@ -11,9 +11,14 @@
 
   CLIController = (function() {
     function CLIController(peer) {
+      var search;
       process.stdout.write("> ");
       process.stdin.resume();
       process.stdin.setEncoding("utf8");
+      search = function(queries, done) {
+        peer.search(queries);
+        return done();
+      };
       process.stdin.on("data", function(data) {
         var done, processData;
         data = data.trim().split('\n');
@@ -38,6 +43,8 @@
               return peer.printNeighbourhood(args, done);
             case constants.JOIN:
               return peer.joinNeighbourhood(done);
+            case constants.SEARCH:
+              return search(args, done);
             default:
               console.log("unknown command: " + command);
               return done();

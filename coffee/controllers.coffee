@@ -9,6 +9,11 @@ class CLIController
         process.stdin.resume()
         process.stdin.setEncoding "utf8"
         
+        
+        search = (queries, done) ->
+            peer.search queries
+            done()
+        
         process.stdin.on "data", (data) ->
             data = data.trim().split '\n'
             processData = (data, done) ->
@@ -24,6 +29,7 @@ class CLIController
                     when constants.EXIT then process.exit 0
                     when constants.NLIST then peer.printNeighbourhood args, done
                     when constants.JOIN then peer.joinNeighbourhood done
+                    when constants.SEARCH then search args, done
                     else
                         console.log "unknown command: #{ command }"
                         done()

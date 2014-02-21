@@ -7,15 +7,19 @@
     "DREAM": "dream",
     "EXIT": "exit",
     "JOIN": "join",
+    "SEARCH": "search",
     "FRIEND": "friend",
     "UNFRIEND": "unfriend",
     "FORCE_FRIEND": "forcefriend",
     "GRAPH": "graph",
     "DELETE_TOKEN": "token",
+    "QUERY": "query",
+    "QUERY_RESULT": "query result",
     "limits": {
         "HIGH": 8
     },
     "errors": {
         "ENOUGH_FRIENDS": "enough friends"
-    }
+    },
+    "TTL": 3
 }

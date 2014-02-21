@@ -65,6 +65,16 @@
         client = createClient(receiver);
         return client.methodCall(constants.GRAPH, [], done);
       };
+      this.query = function(receiver, origin, query, details, done) {
+        var client;
+        client = createClient(receiver);
+        return client.methodCall(constants.QUERY, [origin, query, details], done);
+      };
+      this.queryResult = function(receiver, result, details, done) {
+        var client;
+        client = createClient(receiver);
+        return client.methodCall(constants.QUERY_RESULT, [result, details], done);
+      };
       server.on(constants.PING, function(err, _arg, callback) {
         var peer;
         peer = _arg[0];
@@ -108,6 +118,18 @@
         token = _arg[0];
         callback(null);
         return _this.emit(constants.DELETE_TOKEN, token);
+      });
+      server.on(constants.QUERY, function(err, _arg, callback) {
+        var details, origin, query;
+        origin = _arg[0], query = _arg[1], details = _arg[2];
+        callback(null);
+        return _this.emit(constants.QUERY, origin, query, details);
+      });
+      server.on(constants.QUERY_RESULT, function(err, _arg, callback) {
+        var details, result;
+        result = _arg[0], details = _arg[1];
+        callback(null);
+        return _this.emit(constants.QUERY_RESULT, result, details);
       });
       log("Listening on " + this.port);
     }
