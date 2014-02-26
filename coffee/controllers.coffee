@@ -13,6 +13,13 @@ class CLIController
         search = (queries, done) ->
             peer.search queries
             done()
+            
+        get = ([file], done) ->
+            peer.getFile file, done
+        
+        report = (done) ->
+            peer.report()
+            done()
         
         process.stdin.on "data", (data) ->
             data = data.trim().split '\n'
@@ -29,7 +36,9 @@ class CLIController
                     when constants.EXIT then process.exit 0
                     when constants.NLIST then peer.printNeighbourhood args, done
                     when constants.JOIN then peer.joinNeighbourhood done
-                    when constants.SEARCH then search args, done
+                    when constants.FIND then search args, done
+                    when constants.REPORT then report done
+                    when constants.GET then get args, done
                     else
                         console.log "unknown command: #{ command }"
                         done()

@@ -1,0 +1,11 @@
+bug
+    () peer
+fix
+    first peer added have no ID and capacity. Dooh
+
+
+
+bug
+    friend with self? :-Os
+fix
+    fallback to localhost when there is no "real" IP

@@ -4,15 +4,15 @@ FileLogger = require './filelogger'
 require 'array-sugar'
 cluster = require 'cluster'
 async = require 'async'
+count = (require 'os').cpus().length - 1
 
-console.log "started"
-
-numberOfPeers = 2
-caps = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 7, 8, 10].reverse()
+numberOfPeers = 50
+perProcess = (numberOfPeers - 1) / count
+caps = [1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 7, 10].reverse()
 if cluster.isMaster
     p = new Peer(8000, "Px", 10, [console, new FileLogger "logs/px.txt"])
     new Controllers.CLI p
-    for i in [0...8]
+    for i in [0...count]
         cluster.fork
             offset: i
     cluster.on 'exit', (worker, code, signal) ->
@@ -21,8 +21,8 @@ else
     fstPort = 30000
     offset = parseInt process.env.offset
     
-    remaining = numberOfPeers
-    i = offset*numberOfPeers
+    remaining = perProcess
+    i = offset*perProcess
     
     allStarted = () -> remaining is 0
     

@@ -22,11 +22,12 @@ class Peer
         knownPeers = []
         friends = []
         pendingFriends = []
-        network = new Network @port
         
         log = (msg) =>
             logger.log msg for logger in loggers
                 
+        network = new Network this, log
+        
         @addLogger = (logger) =>
             loggers.push logger
         
@@ -36,6 +37,7 @@ class Peer
         for dev of ifaces
             for details in ifaces[dev] when details.family is "IPv4" and not details.internal
                 @host = details.address 
+        @host = "localhost" if debug
         
         # helpers
         addFriend = (p) =>
@@ -85,10 +87,16 @@ class Peer
                 capacity: peer.capacity
             
         removePeer = (peer) =>
+            log "removing #{peer.id}"
             try
                 unfriend peer
             catch
                 
+                
+            for key, peers of fileMap
+                pleaseRemoveUs = peers.filter (p) => same p, peer
+                peers.remove p for p in pleaseRemoveUs
+                    
             knownPeers.remove peer
         
         #funtions
@@ -102,8 +110,8 @@ class Peer
         
         doPing = (peer, self) =>
             log "pinging #{ peer.host }:#{ peer.port}" if debug
-            addPeer peer
-            network.ping peer, self, removeOnError(peer)
+            addPeer peer if peer.id? #if peers have no id it is bootstraping
+            network.ping peer, self, (err) -> removeOnError(peer)
             
         doForceFriend = (peer, token, done) =>
             log "#{@id} is forcefriending #{peer.id}"
@@ -152,18 +160,19 @@ class Peer
             network.deleteToken peer, token, removeOnError peer
         
         #rounting
-        network.on constants.PING, (peer) =>
+        network.on "ping", (peer) =>
             if (peer? and peer isnt "")
                 doPong peer
                 addPeer peer
         
-        network.on constants.PONG, (sender, peers) =>
+        network.on "pong", (sender, peers) =>
             addPeer sender
             for peer in peers 
                 if (not knows peer) and (not same peer, this)
+                    log "got #{peer.id} from #{sender.id}"
                     doPing peer, this
                 
-        network.on constants.FORCE_FRIEND, (peer, token, callback) =>
+        network.on "force_friend", (peer, token, callback) =>
             if remCap > 0 or isFriend peer or isPendingFriend peer
                 log "#{@id} accepts forcefriend from #{peer.id}. No one kicked"
                 callback false
@@ -182,14 +191,14 @@ class Peer
                 callback true
             addFriend peer if not (isFriend peer or isPendingFriend peer)
         
-        network.on constants.UNFRIEND, (oldFriend, peer, token) =>
+        network.on "unfriend", (oldFriend, peer, token) =>
             if isFriend oldFriend
                 unFriend oldFriend
                 doFriend peer, token, () =>
             else
                 doDeleteToken peer, token if token
             
-        network.on constants.FRIEND, (peer, token, callback) =>
+        network.on "friend", (peer, token, callback) =>
             if token? #TODO: check token
                 remCap++
                 reserved--
@@ -201,11 +210,11 @@ class Peer
                 log "#{@id} rejects #{peer.id}"
                 callback constants.errors.ENOUGH_FRIENDS
                 
-        network.on constants.GRAPH, (callback) =>
+        network.on "graph", (callback) =>
             log "graph"
             callback @getGraph()
             
-        network.on constants.DELETE_TOKEN, (token) =>
+        network.on "delete_token", (token) =>
             if token? #TODO: check token
                 remCap++
         
@@ -252,7 +261,7 @@ class Peer
                 network.createGraph peer, (err, g) =>
                     log "got response from #{peer.id}"
                     if (err)
-                        done(err)
+                        log "error for #{peer.id}"
                     else
                         g.nodes.forEach (n) =>
                             if n.id? and n.capacity?
@@ -264,7 +273,7 @@ class Peer
                             e.n1 = new Node e.n1.id, e.n1.capacity
                             e.n2 = new Node e.n2.id, e.n2.capacity
                             graph.addEdge (new Edge e.n1, e.n2)
-                        done()
+                    done()
             
             if debug and peers.isEmpty
                 peers.push p.id for p in knownPeers
@@ -272,7 +281,7 @@ class Peer
             async.each peers, handlePeer, (err) =>
                 # handle output
                 if err?
-                    log "error in printing" + err
+                    log "error in printing " + err
                 else if out?
                     fs.writeFile out, graph.print()
                 else
@@ -342,7 +351,23 @@ class Peer
                     doForceFriend highCap, createToken(), startLoop
                 else
                     startLoop()
-                    
+        
+        # reporting
+        report =
+            queries: 0
+            hits: 0
+            forwarded: 0
+            routedData: 0
+            
+        @report = () =>
+            data = network.getData "query"
+            log "### REPORT ####"
+            log "#{key}: #{value}" for key, value of report
+            log "##  NETWORK  ##"
+            log "#{key}: #{value}" for key, value of data
+            log "###############"
+            log "## NOVEMVBER ##"
+            log "###############"
         
         # searching
         nextId = 0
@@ -359,37 +384,75 @@ class Peer
                 sentQueries[id] = query
                 friends.forEach (peer) =>
                     network.query peer, this, query, details, removeOnError peer
+        
+        
             
-            
-        network.on constants.QUERY, (origin, query, details) =>
+        network.on "query", (origin, query, details) =>
+            report.queries++
             seenQueries[origin.id] ?= []
             bucket = seenQueries[origin.id]
             return if bucket.contains details.id #ignore query
             log "query (#{query}) from #{origin.id}. Id: #{details.id}, TTL: #{details.ttl}"
             
-            
             bucket.push details.id
-            if query.toLowerCase() is @id.toLowerCase() #TODO: search for resources
-                network.queryResult origin, this, details, removeOnError origin
-            else if details.ttl > 1
-                details.ttl--
-                friends.forEach (peer) =>
-                    network.query peer, origin, query, details, removeOnError peer
+            fs.exists "#{folder}/#{query}", (exists) =>
+                if exists
+                    report.hits++
+                    network.queryResult origin, this, details, removeOnError origin
+                else if details.ttl > 1
+                    details.ttl--
+                    forward = (peer) =>
+                        network.query peer, origin, query, details, removeOnError peer
+                    forward peer for peer in friends when not (same peer, origin)
                     
-        network.on constants.QUERY_RESULT, (sender, details) =>
+                    
+        network.on "query_result", (sender, details) =>
             id = details.id
             query = sentQueries[id]
             log "found #{query} at #{sender.id}"
+            fileMap[query] ?= []
+            fileMap[query].push sender
+        
+        # File handling
+        fileMap = {}            
+        @getFile = (file, done) =>
+            peers = fileMap[file]
+            if peers?
+                peer = peers.first
+                if peer?
+                    network.fetchFile peer, file, (err, data) ->
+                        (removeOnError peer) err
+                        if err?
+                            done "File not found. Please call find #{file}"
+                        else
+                            fs.writeFile "#{folder}/#{file}", data, (err) =>
+                                if err?
+                                    done "Error writing #{file}!!!"
+                                else
+                                    done "Success writing #{file}!!!"
+                else
+                    done "File not found. Please call find #{file}"
+            else
+                done "File not found. Please call find #{file}"
+        
+        network.on "file", (file, done) =>
+            fs.readFile "#{folder}/#{file}", done
+        
+        # setup file structure - an empty folder for every peer
+        folder = "files/#{@id}"
+        fs.mkdir folder, (err) =>
+            if err? and err.code is "EEXIST"
+                fs.readdir folder, (err, files) =>
+                    fs.unlink "#{folder}/#{file}" for file in files
                 
-                
-            
-                    
+        
                     
         joinEvery30Second = () =>
-            setTimeout () =>
-                console.log "### %s TICK ###", @id
-                @joinNeighbourhood () ->
-            , 5000
+            @printNeighbourhood ["THIS IS AWESOME", "-o", "#{folder}/graph_#{@id}.dot"], () =>
+                setTimeout () =>
+                    console.log "### %s TICK ###", @id
+                    @joinNeighbourhood () ->
+                , 5000
                     
         setTimeout () =>
             @joinNeighbourhood joinEvery30Second

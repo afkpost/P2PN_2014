@@ -31,7 +31,7 @@
 
   Peer = (function() {
     function Peer(port, id, capacity, loggers) {
-      var addFriend, addPeer, addPendingFriend, createToken, details, dev, doDeleteToken, doForceFriend, doFriend, doPing, doPong, doUnfriend, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, network, nextId, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, reserved, seenQueries, sentQueries, unFriend, _i, _len, _ref,
+      var addFriend, addPeer, addPendingFriend, createToken, details, dev, doDeleteToken, doForceFriend, doFriend, doPing, doPong, doUnfriend, fileMap, folder, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, network, nextId, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, report, reserved, seenQueries, sentQueries, unFriend, _i, _len, _ref,
         _this = this;
       this.port = port;
       this.id = id;
@@ -44,7 +44,6 @@
       knownPeers = [];
       friends = [];
       pendingFriends = [];
-      network = new Network(this.port);
       log = function(msg) {
         var logger, _i, _len, _results;
         _results = [];
@@ -54,6 +53,7 @@
         }
         return _results;
       };
+      network = new Network(this, log);
       this.addLogger = function(logger) {
         return loggers.push(logger);
       };
@@ -66,6 +66,9 @@
             this.host = details.address;
           }
         }
+      }
+      if (debug) {
+        this.host = "localhost";
       }
       addFriend = function(p) {
         if (isFriend(p)) {
@@ -138,10 +141,22 @@
         });
       };
       removePeer = function(peer) {
+        var key, p, peers, pleaseRemoveUs, _j, _len1;
+        log("removing " + peer.id);
         try {
           unfriend(peer);
         } catch (_error) {
 
+        }
+        for (key in fileMap) {
+          peers = fileMap[key];
+          pleaseRemoveUs = peers.filter(function(p) {
+            return same(p, peer);
+          });
+          for (_j = 0, _len1 = pleaseRemoveUs.length; _j < _len1; _j++) {
+            p = pleaseRemoveUs[_j];
+            peers.remove(p);
+          }
         }
         return knownPeers.remove(peer);
       };
@@ -160,8 +175,12 @@
         if (debug) {
           log("pinging " + peer.host + ":" + peer.port);
         }
-        addPeer(peer);
-        return network.ping(peer, self, removeOnError(peer));
+        if (peer.id != null) {
+          addPeer(peer);
+        }
+        return network.ping(peer, self, function(err) {
+          return removeOnError(peer);
+        });
       };
       doForceFriend = function(peer, token, done) {
         log("" + _this.id + " is forcefriending " + peer.id);
@@ -216,19 +235,20 @@
         log("" + _this.id + " tells " + peer.id + " to delete token");
         return network.deleteToken(peer, token, removeOnError(peer));
       };
-      network.on(constants.PING, function(peer) {
+      network.on("ping", function(peer) {
         if ((peer != null) && peer !== "") {
           doPong(peer);
           return addPeer(peer);
         }
       });
-      network.on(constants.PONG, function(sender, peers) {
+      network.on("pong", function(sender, peers) {
         var peer, _j, _len1, _results;
         addPeer(sender);
         _results = [];
         for (_j = 0, _len1 = peers.length; _j < _len1; _j++) {
           peer = peers[_j];
           if ((!knows(peer)) && (!same(peer, _this))) {
+            log("got " + peer.id + " from " + sender.id);
             _results.push(doPing(peer, _this));
           } else {
             _results.push(void 0);
@@ -236,7 +256,7 @@
         }
         return _results;
       });
-      network.on(constants.FORCE_FRIEND, function(peer, token, callback) {
+      network.on("force_friend", function(peer, token, callback) {
         var candidates, oldFriend;
         if (remCap > 0 || isFriend(peer || isPendingFriend(peer))) {
           log("" + _this.id + " accepts forcefriend from " + peer.id + ". No one kicked");
@@ -262,7 +282,7 @@
           return addFriend(peer);
         }
       });
-      network.on(constants.UNFRIEND, function(oldFriend, peer, token) {
+      network.on("unfriend", function(oldFriend, peer, token) {
         if (isFriend(oldFriend)) {
           unFriend(oldFriend);
           return doFriend(peer, token, function() {});
@@ -272,7 +292,7 @@
           }
         }
       });
-      network.on(constants.FRIEND, function(peer, token, callback) {
+      network.on("friend", function(peer, token, callback) {
         if (token != null) {
           remCap++;
           reserved--;
@@ -288,11 +308,11 @@
           return callback(constants.errors.ENOUGH_FRIENDS);
         }
       });
-      network.on(constants.GRAPH, function(callback) {
+      network.on("graph", function(callback) {
         log("graph");
         return callback(_this.getGraph());
       });
-      network.on(constants.DELETE_TOKEN, function(token) {
+      network.on("delete_token", function(token) {
         if (token != null) {
           return remCap++;
         }
@@ -353,7 +373,7 @@
           return network.createGraph(peer, function(err, g) {
             log("got response from " + peer.id);
             if (err) {
-              return done(err);
+              log("error for " + peer.id);
             } else {
               g.nodes.forEach(function(n) {
                 if ((n.id != null) && (n.capacity != null)) {
@@ -367,8 +387,8 @@
                 e.n2 = new Node(e.n2.id, e.n2.capacity);
                 return graph.addEdge(new Edge(e.n1, e.n2));
               });
-              return done();
             }
+            return done();
           });
         };
         if (debug && peers.isEmpty) {
@@ -379,7 +399,7 @@
         }
         return async.each(peers, handlePeer, function(err) {
           if (err != null) {
-            log("error in printing" + err);
+            log("error in printing " + err);
           } else if (out != null) {
             fs.writeFile(out, graph.print());
           } else {
@@ -502,6 +522,29 @@
           }
         }
       };
+      report = {
+        queries: 0,
+        hits: 0,
+        forwarded: 0,
+        routedData: 0
+      };
+      this.report = function() {
+        var data, key, value;
+        data = network.getData("query");
+        log("### REPORT ####");
+        for (key in report) {
+          value = report[key];
+          log("" + key + ": " + value);
+        }
+        log("##  NETWORK  ##");
+        for (key in data) {
+          value = data[key];
+          log("" + key + ": " + value);
+        }
+        log("###############");
+        log("## NOVEMVBER ##");
+        return log("###############");
+      };
       nextId = 0;
       sentQueries = [];
       seenQueries = {};
@@ -519,8 +562,9 @@
           });
         });
       };
-      network.on(constants.QUERY, function(origin, query, details) {
+      network.on("query", function(origin, query, details) {
         var bucket, _name;
+        report.queries++;
         if (seenQueries[_name = origin.id] == null) {
           seenQueries[_name] = [];
         }
@@ -530,26 +574,90 @@
         }
         log("query (" + query + ") from " + origin.id + ". Id: " + details.id + ", TTL: " + details.ttl);
         bucket.push(details.id);
-        if (query.toLowerCase() === _this.id.toLowerCase()) {
-          return network.queryResult(origin, _this, details, removeOnError(origin));
-        } else if (details.ttl > 1) {
-          details.ttl--;
-          return friends.forEach(function(peer) {
-            return network.query(peer, origin, query, details, removeOnError(peer));
-          });
-        }
+        return fs.exists("" + folder + "/" + query, function(exists) {
+          var forward, peer, _j, _len1, _results;
+          if (exists) {
+            report.hits++;
+            return network.queryResult(origin, _this, details, removeOnError(origin));
+          } else if (details.ttl > 1) {
+            details.ttl--;
+            forward = function(peer) {
+              return network.query(peer, origin, query, details, removeOnError(peer));
+            };
+            _results = [];
+            for (_j = 0, _len1 = friends.length; _j < _len1; _j++) {
+              peer = friends[_j];
+              if (!(same(peer, origin))) {
+                _results.push(forward(peer));
+              }
+            }
+            return _results;
+          }
+        });
       });
-      network.on(constants.QUERY_RESULT, function(sender, details) {
+      network.on("query_result", function(sender, details) {
         var query;
         id = details.id;
         query = sentQueries[id];
-        return log("found " + query + " at " + sender.id);
+        log("found " + query + " at " + sender.id);
+        if (fileMap[query] == null) {
+          fileMap[query] = [];
+        }
+        return fileMap[query].push(sender);
+      });
+      fileMap = {};
+      this.getFile = function(file, done) {
+        var peer, peers;
+        peers = fileMap[file];
+        if (peers != null) {
+          peer = peers.first;
+          if (peer != null) {
+            return network.fetchFile(peer, file, function(err, data) {
+              var _this = this;
+              (removeOnError(peer))(err);
+              if (err != null) {
+                return done("File not found. Please call find " + file);
+              } else {
+                return fs.writeFile("" + folder + "/" + file, data, function(err) {
+                  if (err != null) {
+                    return done("Error writing " + file + "!!!");
+                  } else {
+                    return done("Success writing " + file + "!!!");
+                  }
+                });
+              }
+            });
+          } else {
+            return done("File not found. Please call find " + file);
+          }
+        } else {
+          return done("File not found. Please call find " + file);
+        }
+      };
+      network.on("file", function(file, done) {
+        return fs.readFile("" + folder + "/" + file, done);
+      });
+      folder = "files/" + this.id;
+      fs.mkdir(folder, function(err) {
+        if ((err != null) && err.code === "EEXIST") {
+          return fs.readdir(folder, function(err, files) {
+            var file, _j, _len1, _results;
+            _results = [];
+            for (_j = 0, _len1 = files.length; _j < _len1; _j++) {
+              file = files[_j];
+              _results.push(fs.unlink("" + folder + "/" + file));
+            }
+            return _results;
+          });
+        }
       });
       joinEvery30Second = function() {
-        return setTimeout(function() {
-          console.log("### %s TICK ###", _this.id);
-          return _this.joinNeighbourhood(function() {});
-        }, 5000);
+        return _this.printNeighbourhood(["THIS IS AWESOME", "-o", "" + folder + "/graph_" + _this.id + ".dot"], function() {
+          return setTimeout(function() {
+            console.log("### %s TICK ###", _this.id);
+            return _this.joinNeighbourhood(function() {});
+          }, 5000);
+        });
       };
       setTimeout(function() {
         return _this.joinNeighbourhood(joinEvery30Second);
