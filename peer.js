@@ -31,7 +31,7 @@
 
   Peer = (function() {
     function Peer(port, id, capacity, loggers) {
-      var addFriend, addPeer, addPendingFriend, createToken, details, dev, doDeleteToken, doForceFriend, doFriend, doPing, doPong, doUnfriend, fileMap, folder, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, network, nextId, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, report, reserved, seenQueries, sentQueries, unFriend, _i, _len, _ref,
+      var addFriend, addPeer, addPendingFriend, createToken, details, dev, doDeleteToken, doForceFriend, doFriend, doPing, doPong, doUnfriend, fileMap, folder, foundIds, friends, ifaces, isFriend, isPendingFriend, joinEvery30Second, knownPeers, knows, log, network, nextId, pendingFriends, remCap, removeOnError, removePeer, removePendingFriend, reserved, seenQueries, sentQueries, unFriend, _i, _len, _ref,
         _this = this;
       this.port = port;
       this.id = id;
@@ -267,7 +267,7 @@
             return candidates.remove(p);
           });
           candidates.sort(function(p1, p2) {
-            return p2.capacity - p1.capacity;
+            return p1.capacity - p2.capacity;
           });
           oldFriend = candidates.first;
           doUnfriend(oldFriend, peer, token);
@@ -438,7 +438,7 @@
             return p.capacity > 1;
           });
           candidates.sort(function(p1, p2) {
-            return p1.capacity - p2.capacity;
+            return p2.capacity - p1.capacity;
           });
           return async.whilst(haveCapacity, function(done) {
             var peer;
@@ -522,49 +522,38 @@
           }
         }
       };
-      report = {
-        queries: 0,
-        hits: 0,
-        forwarded: 0,
-        routedData: 0
-      };
       this.report = function() {
-        var data, key, value;
-        data = network.getData("query");
-        log("### REPORT ####");
-        for (key in report) {
-          value = report[key];
-          log("" + key + ": " + value);
+        var peer, _j, _len1, _results;
+        log("peer, query, , kquery, ");
+        log(", sent, received, sent, received");
+        network.getData(_this, ["query", "kquery"], log);
+        _results = [];
+        for (_j = 0, _len1 = knownPeers.length; _j < _len1; _j++) {
+          peer = knownPeers[_j];
+          _results.push(network.getData(peer, ["query", "kquery"], log));
         }
-        log("##  NETWORK  ##");
-        for (key in data) {
-          value = data[key];
-          log("" + key + ": " + value);
-        }
-        log("###############");
-        log("## NOVEMVBER ##");
-        return log("###############");
+        return _results;
       };
       nextId = 0;
       sentQueries = [];
       seenQueries = {};
-      this.search = function(queries) {
-        return queries.forEach(function(query) {
-          log("seaching for " + query);
-          id = nextId++;
-          details = {
-            ttl: constants.TTL,
-            id: id
-          };
-          sentQueries[id] = query;
-          return friends.forEach(function(peer) {
-            return network.query(peer, _this, query, details, removeOnError(peer));
-          });
+      this.search = function(query, ttl) {
+        if (ttl == null) {
+          ttl = constants.TTL;
+        }
+        log("seaching for " + query + " with flooding");
+        id = nextId++;
+        details = {
+          ttl: ttl,
+          id: id
+        };
+        sentQueries[id] = query;
+        return friends.forEach(function(peer) {
+          return network.query(peer, _this, query, details, removeOnError(peer));
         });
       };
       network.on("query", function(origin, query, details) {
         var bucket, _name;
-        report.queries++;
         if (seenQueries[_name = origin.id] == null) {
           seenQueries[_name] = [];
         }
@@ -577,7 +566,6 @@
         return fs.exists("" + folder + "/" + query, function(exists) {
           var forward, peer, _j, _len1, _results;
           if (exists) {
-            report.hits++;
             return network.queryResult(origin, _this, details, removeOnError(origin));
           } else if (details.ttl > 1) {
             details.ttl--;
@@ -595,9 +583,85 @@
           }
         });
       });
+      this.ksearch = function(query, k, ttl) {
+        var candidates, i, idx, peer, _j, _results;
+        if (k == null) {
+          k = 1;
+        }
+        if (ttl == null) {
+          ttl = constants.TTL;
+        }
+        log("seaching for " + query + " with texas rangers");
+        candidates = friends.copy();
+        id = nextId++;
+        details = {
+          path: [_this.id],
+          ttl: ttl,
+          id: id,
+          modulo: 4,
+          lifetime: ttl
+        };
+        sentQueries[id] = query;
+        _results = [];
+        for (i = _j = 0; 0 <= k ? _j < k : _j > k; i = 0 <= k ? ++_j : --_j) {
+          if (!(candidates.length !== 0)) {
+            continue;
+          }
+          idx = Math.floor(Math.random() * candidates.length);
+          peer = candidates[idx];
+          if (peer.capacity === 1) {
+            candidates.remove(peer);
+          }
+          _results.push(network.kquery(peer, _this, query, details, removeOnError(peer)));
+        }
+        return _results;
+      };
+      network.on("kquery", function(origin, query, details) {
+        var path;
+        path = details.path.join(',');
+        log("kquery (" + query + ") from " + origin.id + ". Id: " + details.id + ", TTL: " + details.ttl + ".");
+        return fs.exists("" + folder + "/" + query, function(exists) {
+          var cont;
+          if (exists) {
+            return network.queryResult(origin, _this, details, removeOnError(origin));
+          } else if (details.ttl > 1) {
+            details.ttl--;
+            cont = function() {
+              var candidates, idx, peer;
+              candidates = friends.copy();
+              if (candidates.length > 1) {
+                candidates.remove(friends.findOne(function(p) {
+                  return p.id === details.path.last;
+                }));
+              }
+              details.path.push(_this.id);
+              idx = Math.floor(Math.random() * candidates.length);
+              peer = candidates[idx];
+              return network.kquery(peer, origin, query, details, removeOnError(peer));
+            };
+            if ((details.lifetime - details.ttl) % details.modulo === 0) {
+              return network.found(origin, _this.id, details.id, function(err, found) {
+                if (err) {
+                  return (removeOnError(origin))(err);
+                } else if (!found) {
+                  return cont();
+                }
+              });
+            } else {
+              return cont();
+            }
+          }
+        });
+      });
+      foundIds = [];
+      network.on("found", function(sender, id, callback) {
+        log("walkercallback from " + sender + ": (" + id + ")");
+        return callback(foundIds.contains(id));
+      });
       network.on("query_result", function(sender, details) {
         var query;
         id = details.id;
+        foundIds.push(id);
         query = sentQueries[id];
         log("found " + query + " at " + sender.id);
         if (fileMap[query] == null) {

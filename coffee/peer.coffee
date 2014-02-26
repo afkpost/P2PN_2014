@@ -181,7 +181,7 @@ class Peer
                 pendingFriends.forEach (p) =>
                     candidates.remove p
                     
-                candidates.sort (p1, p2) => p2.capacity - p1.capacity
+                candidates.sort (p1, p2) => p1.capacity - p2.capacity
                 oldFriend = candidates.first
                 doUnfriend oldFriend, peer, token
                 if oldFriend?
@@ -308,7 +308,7 @@ class Peer
             
             if @capacity is 1
                 candidates = knownPeers.filter (p) => p.capacity > 1 # do not friend "ones"
-                candidates.sort (p1, p2) => p1.capacity - p2.capacity
+                candidates.sort (p1, p2) => p2.capacity - p1.capacity
                 async.whilst haveCapacity, (done) =>
                     peer = candidates.first
                     candidates.remove peer
@@ -352,43 +352,32 @@ class Peer
                 else
                     startLoop()
         
-        # reporting
-        report =
-            queries: 0
-            hits: 0
-            forwarded: 0
-            routedData: 0
-            
+        # reporting           
         @report = () =>
-            data = network.getData "query"
-            log "### REPORT ####"
-            log "#{key}: #{value}" for key, value of report
-            log "##  NETWORK  ##"
-            log "#{key}: #{value}" for key, value of data
-            log "###############"
-            log "## NOVEMVBER ##"
-            log "###############"
+            log "peer, query, , kquery, "
+            log ", sent, received, sent, received"
+            network.getData this, ["query", "kquery"], log
+            for peer in knownPeers
+                network.getData peer, ["query", "kquery"], log
         
         # searching
         nextId = 0
         sentQueries = []
         seenQueries = {}
         
-        @search = (queries) =>
-            queries.forEach (query) =>
-                log "seaching for #{query}"
-                id = nextId++
-                details =
-                    ttl: constants.TTL
-                    id: id
-                sentQueries[id] = query
-                friends.forEach (peer) =>
-                    network.query peer, this, query, details, removeOnError peer
+        @search = (query, ttl = constants.TTL) =>
+            log "seaching for #{query} with flooding"
+            id = nextId++
+            details =
+                ttl: ttl
+                id: id
+            sentQueries[id] = query
+            friends.forEach (peer) =>
+                network.query peer, this, query, details, removeOnError peer
         
         
             
         network.on "query", (origin, query, details) =>
-            report.queries++
             seenQueries[origin.id] ?= []
             bucket = seenQueries[origin.id]
             return if bucket.contains details.id #ignore query
@@ -397,7 +386,6 @@ class Peer
             bucket.push details.id
             fs.exists "#{folder}/#{query}", (exists) =>
                 if exists
-                    report.hits++
                     network.queryResult origin, this, details, removeOnError origin
                 else if details.ttl > 1
                     details.ttl--
@@ -405,9 +393,58 @@ class Peer
                         network.query peer, origin, query, details, removeOnError peer
                     forward peer for peer in friends when not (same peer, origin)
                     
+        @ksearch = (query, k = 1, ttl = constants.TTL) =>
+            log "seaching for #{query} with texas rangers"
+            candidates = friends.copy()
+            id = nextId++
+            details =
+                path: [@id]
+                ttl: ttl
+                id: id
+                modulo: 4
+                lifetime: ttl
+                
+            sentQueries[id] = query
+            for i in [0...k] when candidates.length isnt 0
+                idx = Math.floor Math.random() * candidates.length
+                peer = candidates[idx]
+                candidates.remove peer if peer.capacity is 1
+                network.kquery peer, this, query, details, removeOnError peer
+            
+        network.on "kquery", (origin, query, details) =>
+            path = details.path.join ','
+            log "kquery (#{query}) from #{origin.id}. Id: #{details.id}, TTL: #{details.ttl}."
+            
+            fs.exists "#{folder}/#{query}", (exists) =>
+                if exists
+                    network.queryResult origin, this, details, removeOnError origin
+                else if details.ttl > 1
+                    details.ttl--
+                    cont = () =>
+                        candidates = friends.copy()
+                        if candidates.length > 1
+                            candidates.remove friends.findOne (p) => p.id is details.path.last
+                        details.path.push @id
+                        idx = Math.floor Math.random() * candidates.length
+                        peer = candidates[idx]
+                        network.kquery peer, origin, query, details, removeOnError peer
+                        
+                    if (details.lifetime - details.ttl) % details.modulo is 0
+                        network.found origin, @id, details.id, (err, found) =>
+                            if err
+                                (removeOnError origin) err
+                            else if not found
+                                cont()
+                    else
+                        cont()
+        foundIds = []
+        network.on "found", (sender, id, callback) =>
+            log "walkercallback from #{sender}: (#{id})"
+            callback foundIds.contains id
                     
         network.on "query_result", (sender, details) =>
             id = details.id
+            foundIds.push id
             query = sentQueries[id]
             log "found #{query} at #{sender.id}"
             fileMap[query] ?= []

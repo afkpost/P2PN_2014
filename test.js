@@ -16,7 +16,7 @@
 
   count = (require('os')).cpus().length - 1;
 
-  numberOfPeers = 50;
+  numberOfPeers = 120;
 
   perProcess = (numberOfPeers - 1) / count;
 

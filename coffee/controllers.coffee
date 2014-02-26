@@ -10,9 +10,20 @@ class CLIController
         process.stdin.setEncoding "utf8"
         
         
-        search = (queries, done) ->
-            peer.search queries
+        search = ([query, ttl], done) ->
+            if ttl?
+                ttl = parseInt ttl
+            peer.search query, ttl
             done()
+            
+        kseach = ([query, k, ttl], done) ->
+            if k?
+                k = parseInt k
+            if ttl?
+                ttl = parseInt ttl
+            peer.ksearch query, k, ttl
+            done()
+            
             
         get = ([file], done) ->
             peer.getFile file, done
@@ -37,6 +48,7 @@ class CLIController
                     when constants.NLIST then peer.printNeighbourhood args, done
                     when constants.JOIN then peer.joinNeighbourhood done
                     when constants.FIND then search args, done
+                    when constants.KFIND then kseach args, done
                     when constants.REPORT then report done
                     when constants.GET then get args, done
                     else

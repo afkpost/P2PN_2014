@@ -11,7 +11,10 @@ DELETE_TOKEN = "delete_token"
 GRAPH = "graph"
 QUERY = "query"
 QUERY_RESULT = "query_result"
+KQUERY = "kquery"
 FILE = "file"
+FOUND = "found"
+REPORT = "report"
     
 class Network extends EventEmitter
     constructor: (peer, log) ->
@@ -26,12 +29,14 @@ class Network extends EventEmitter
                 host: receiver.host
         
         sent = {}
+        received = {}
         updateData = (records, key, data) =>
             records[key] ?=
                 count: 0
                 data: 0
             records[key].count++
-            if typeof client isnt "number"
+            data ?= 0
+            if typeof data isnt "number"
                 data = parseInt data.options.headers['Content-Length']
             records[key].data += data
         
@@ -75,6 +80,11 @@ class Network extends EventEmitter
             client.methodCall QUERY, [origin, query, details], done
             updateData sent, QUERY, client
             
+        @kquery = (receiver, origin, query, details, done) =>
+            client = createClient receiver
+            client.methodCall KQUERY, [origin, query, details], done
+            updateData sent, KQUERY, client
+            
         @queryResult = (receiver, result, details, done) =>
             client = createClient receiver
             client.methodCall QUERY_RESULT, [result, details], done
@@ -84,49 +94,84 @@ class Network extends EventEmitter
             client = createClient receiver
             client.methodCall FILE, [file], done
             updateData sent, FILE, client
+            
+        @found = (receiver, sender, id, done) =>
+            client = createClient receiver
+            client.methodCall FOUND, [sender, id], done
+            updateData sent, FOUND, client
+            
+        @getData = (peer, keys, done) =>
+            client = createClient peer
+            client.methodCall REPORT, [keys], (err, str) =>
+                done str
         
         #rounting
         server.on PING, (err, [peer], callback) =>
             callback null # acknowledge
+            updateData received, PING
             @emit PING, peer
         
         server.on PONG, (err, [sender, peers], callback) =>
             callback null # acknowledge
+            updateData received, PONG
             @emit PONG, sender, peers
                 
         server.on FORCE_FRIEND, (err, [peer, token], callback) =>
+            updateData received, FORCE_FRIEND
             @emit FORCE_FRIEND, peer, token, (kicked) -> callback null, kicked
             
         server.on UNFRIEND, (err, [oldFriend, peer, token], callback) =>
             callback null # acknowledge
+            updateData received, UNFRIEND
             @emit UNFRIEND, oldFriend, peer, token
             
         server.on FRIEND, (err, [peer, token], callback) =>
+            updateData received, FRIEND
             @emit FRIEND, peer, token, (err) -> callback null, err
                 
         server.on GRAPH, (err, [], callback) =>
+            updateData received, GRAPH
             @emit GRAPH, (graph) -> callback null, graph
             
         server.on DELETE_TOKEN, (err, [token], callback) =>
             callback null # acknowledge
+            updateData received, DELETE_TOKEN
             @emit DELETE_TOKEN, token
             
         server.on QUERY, (err, [origin, query, details], callback) =>
             callback null # acknowledge
+            updateData received, QUERY
             @emit QUERY, origin, query, details
+            
+        server.on KQUERY, (err, [origin, query, details], callback) =>
+            callback null # acknowledge
+            updateData received, KQUERY
+            @emit KQUERY, origin, query, details
             
         server.on QUERY_RESULT, (err, [result, details], callback) =>
             callback null # acknowledge
+            updateData received, QUERY_RESULT
             @emit QUERY_RESULT, result, details
             
         server.on FILE, (err, [file], callback) =>
+            updateData received, FILE
             @emit FILE, file, callback
-        
-        @getData = (key) =>
-            if key?
-                sent[key]
-            else
-                sent
+            
+        server.on FOUND, (err, [sender, id], callback) =>
+            updateData received, FOUND
+            @emit FOUND, sender, id, (found) => callback null, found
+            
+        server.on REPORT, (err, [keys], callback) =>
+            buffer = ""
+            for key in keys
+                s = sent[key]
+                r = received[key]
+                s ?=
+                    count: 0
+                r ?=
+                    count: 0
+                buffer += ", #{s.count}, #{r.count}"
+            callback null, "#{peer.id}#{buffer}"
             
         log "Listening on port #{port}"
                 

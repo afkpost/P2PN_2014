@@ -7,6 +7,7 @@
     "EXIT": "exit",
     "JOIN": "join",
     "FIND": "find",
+    "KFIND": "kfind",
     "GET": "get",
     "GRAPH": "graph",
     "limits": {

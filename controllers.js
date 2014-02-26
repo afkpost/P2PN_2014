@@ -11,12 +11,29 @@
 
   CLIController = (function() {
     function CLIController(peer) {
-      var get, report, search;
+      var get, kseach, report, search;
       process.stdout.write("> ");
       process.stdin.resume();
       process.stdin.setEncoding("utf8");
-      search = function(queries, done) {
-        peer.search(queries);
+      search = function(_arg, done) {
+        var query, ttl;
+        query = _arg[0], ttl = _arg[1];
+        if (ttl != null) {
+          ttl = parseInt(ttl);
+        }
+        peer.search(query, ttl);
+        return done();
+      };
+      kseach = function(_arg, done) {
+        var k, query, ttl;
+        query = _arg[0], k = _arg[1], ttl = _arg[2];
+        if (k != null) {
+          k = parseInt(k);
+        }
+        if (ttl != null) {
+          ttl = parseInt(ttl);
+        }
+        peer.ksearch(query, k, ttl);
         return done();
       };
       get = function(_arg, done) {
@@ -54,6 +71,8 @@
               return peer.joinNeighbourhood(done);
             case constants.FIND:
               return search(args, done);
+            case constants.KFIND:
+              return kseach(args, done);
             case constants.REPORT:
               return report(done);
             case constants.GET:
