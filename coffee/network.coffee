@@ -18,10 +18,93 @@ REPORT = "report"
     
 class Network extends EventEmitter
     constructor: (peer, log) ->
-        port = peer.port
         log ?= () ->
-        server = xmlrpc.createServer
-            port: port
+        
+        server = null
+        
+        createServer = (port) =>
+            server = xmlrpc.createServer
+                port: port
+                
+                
+            server.httpServer.on 'listening', () =>
+                #rounting
+                server.on PING, (err, [peer], callback) =>
+                    callback null # acknowledge
+                    updateData received, PING
+                    @emit PING, peer
+                
+                server.on PONG, (err, [sender, peers], callback) =>
+                    callback null # acknowledge
+                    updateData received, PONG
+                    @emit PONG, sender, peers
+                        
+                server.on FORCE_FRIEND, (err, [peer, token], callback) =>
+                    updateData received, FORCE_FRIEND
+                    @emit FORCE_FRIEND, peer, token, (kicked) -> callback null, kicked
+                    
+                server.on UNFRIEND, (err, [oldFriend, peer, token], callback) =>
+                    callback null # acknowledge
+                    updateData received, UNFRIEND
+                    @emit UNFRIEND, oldFriend, peer, token
+                    
+                server.on FRIEND, (err, [peer, token], callback) =>
+                    updateData received, FRIEND
+                    @emit FRIEND, peer, token, (err) -> callback null, err
+                        
+                server.on GRAPH, (err, [], callback) =>
+                    updateData received, GRAPH
+                    @emit GRAPH, (graph) -> callback null, graph
+                    
+                server.on DELETE_TOKEN, (err, [token], callback) =>
+                    callback null # acknowledge
+                    updateData received, DELETE_TOKEN
+                    @emit DELETE_TOKEN, token
+                    
+                server.on QUERY, (err, [origin, query, details], callback) =>
+                    callback null # acknowledge
+                    updateData received, QUERY
+                    @emit QUERY, origin, query, details
+                    
+                server.on KQUERY, (err, [origin, query, details], callback) =>
+                    callback null # acknowledge
+                    updateData received, KQUERY
+                    @emit KQUERY, origin, query, details
+                    
+                server.on QUERY_RESULT, (err, [result, details], callback) =>
+                    callback null # acknowledge
+                    updateData received, QUERY_RESULT
+                    @emit QUERY_RESULT, result, details
+                    
+                server.on FILE, (err, [file], callback) =>
+                    updateData received, FILE
+                    @emit FILE, file, callback
+                    
+                server.on FOUND, (err, [sender, id], callback) =>
+                    updateData received, FOUND
+                    @emit FOUND, sender, id, (found) => callback null, found
+                    
+                server.on REPORT, (err, [keys], callback) =>
+                    buffer = ""
+                    for key in keys
+                        s = sent[key]
+                        r = received[key]
+                        s ?=
+                            count: 0
+                        r ?=
+                            count: 0
+                        buffer += ", #{s.count}, #{r.count}"
+                    callback null, "#{peer.id}#{buffer}"
+                    
+                log "Listening on port #{port}"
+                @emit 'ready'
+                
+            server.httpServer.on 'error', (e) ->
+                console.error "#{peer.id}: #{e.message} (port: #{port}"
+                peer.port += 500
+                createServer peer.port
+        
+        createServer peer.port
         
         createClient = (receiver) =>
             xmlrpc.createClient
@@ -105,75 +188,6 @@ class Network extends EventEmitter
             client.methodCall REPORT, [keys], (err, str) =>
                 done str
         
-        #rounting
-        server.on PING, (err, [peer], callback) =>
-            callback null # acknowledge
-            updateData received, PING
-            @emit PING, peer
-        
-        server.on PONG, (err, [sender, peers], callback) =>
-            callback null # acknowledge
-            updateData received, PONG
-            @emit PONG, sender, peers
-                
-        server.on FORCE_FRIEND, (err, [peer, token], callback) =>
-            updateData received, FORCE_FRIEND
-            @emit FORCE_FRIEND, peer, token, (kicked) -> callback null, kicked
-            
-        server.on UNFRIEND, (err, [oldFriend, peer, token], callback) =>
-            callback null # acknowledge
-            updateData received, UNFRIEND
-            @emit UNFRIEND, oldFriend, peer, token
-            
-        server.on FRIEND, (err, [peer, token], callback) =>
-            updateData received, FRIEND
-            @emit FRIEND, peer, token, (err) -> callback null, err
-                
-        server.on GRAPH, (err, [], callback) =>
-            updateData received, GRAPH
-            @emit GRAPH, (graph) -> callback null, graph
-            
-        server.on DELETE_TOKEN, (err, [token], callback) =>
-            callback null # acknowledge
-            updateData received, DELETE_TOKEN
-            @emit DELETE_TOKEN, token
-            
-        server.on QUERY, (err, [origin, query, details], callback) =>
-            callback null # acknowledge
-            updateData received, QUERY
-            @emit QUERY, origin, query, details
-            
-        server.on KQUERY, (err, [origin, query, details], callback) =>
-            callback null # acknowledge
-            updateData received, KQUERY
-            @emit KQUERY, origin, query, details
-            
-        server.on QUERY_RESULT, (err, [result, details], callback) =>
-            callback null # acknowledge
-            updateData received, QUERY_RESULT
-            @emit QUERY_RESULT, result, details
-            
-        server.on FILE, (err, [file], callback) =>
-            updateData received, FILE
-            @emit FILE, file, callback
-            
-        server.on FOUND, (err, [sender, id], callback) =>
-            updateData received, FOUND
-            @emit FOUND, sender, id, (found) => callback null, found
-            
-        server.on REPORT, (err, [keys], callback) =>
-            buffer = ""
-            for key in keys
-                s = sent[key]
-                r = received[key]
-                s ?=
-                    count: 0
-                r ?=
-                    count: 0
-                buffer += ", #{s.count}, #{r.count}"
-            callback null, "#{peer.id}#{buffer}"
-            
-        log "Listening on port #{port}"
                 
 module.exports = Network
 

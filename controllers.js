@@ -142,9 +142,9 @@
 
   SimpleController = (function() {
     function SimpleController(peer) {
-      setTimeout(function() {
+      peer.network.on('ready', function() {
         return peer.hello(["localhost:8000"], function() {});
-      }, 1000);
+      });
     }
 
     return SimpleController;

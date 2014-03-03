@@ -16,14 +16,19 @@
 
   count = (require('os')).cpus().length - 1;
 
-  numberOfPeers = 120;
+  numberOfPeers = 1001;
+
+  numberOfPeers = (Math.floor((numberOfPeers - 1) / count)) * count + 1;
 
   perProcess = (numberOfPeers - 1) / count;
 
   caps = [1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 7, 10].reverse();
 
   if (cluster.isMaster) {
-    p = new Peer(8000, "Px", 10, [console, new FileLogger("logs/px.txt")]);
+    console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+    console.log("@@@         Starting " + numberOfPeers + " peers        @@@");
+    console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+    p = new Peer(8000, "Px", 10, [new FileLogger("logs/px.txt")]);
     new Controllers.CLI(p);
     for (i = _i = 0; 0 <= count ? _i < count : _i > count; i = 0 <= count ? ++_i : --_i) {
       cluster.fork({
@@ -34,7 +39,7 @@
       return console.log('a worker died');
     });
   } else {
-    fstPort = 30000;
+    fstPort = 40000;
     offset = parseInt(process.env.offset);
     remaining = perProcess;
     i = offset * perProcess;

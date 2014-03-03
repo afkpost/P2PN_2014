@@ -89,9 +89,8 @@ class FileController
                 
 class SimpleController
     constructor: (peer) ->
-        setTimeout () ->
+        peer.network.on 'ready', () ->
             peer.hello ["localhost:8000"], () ->
-        , 1000
                 
 module.exports =
     CLI: CLIController

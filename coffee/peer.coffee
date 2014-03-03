@@ -13,6 +13,12 @@ debug = true
 same = (p1, p2) =>
     p1.host is p2.host and p1.port is p2.port
 count = 0
+
+# Find IP
+ifaces = os.networkInterfaces();
+for dev of ifaces
+    for details in ifaces[dev] when details.family is "IPv4" and not details.internal
+        host = details.address 
     
 class Peer
     constructor: (@port, @id, @capacity = 5, loggers = []) ->
@@ -27,16 +33,14 @@ class Peer
             logger.log msg for logger in loggers
                 
         network = new Network this, log
+        @network = network
         
         @addLogger = (logger) =>
             loggers.push logger
         
         
-        # Find IP
-        ifaces = os.networkInterfaces();
-        for dev of ifaces
-            for details in ifaces[dev] when details.family is "IPv4" and not details.internal
-                @host = details.address 
+        @host = host
+        @host ?= "localhost"
         @host = "localhost" if debug
         
         # helpers
@@ -283,7 +287,8 @@ class Peer
                 if err?
                     log "error in printing " + err
                 else if out?
-                    fs.writeFile out, graph.print()
+                    fs.writeFile out, graph.print(), (err) =>
+                        console.error err if err?
                 else
                     log "reserved: " + reserved + "/" + remCap + "\n" + graph.print()
                 done()
@@ -480,7 +485,8 @@ class Peer
         fs.mkdir folder, (err) =>
             if err? and err.code is "EEXIST"
                 fs.readdir folder, (err, files) =>
-                    fs.unlink "#{folder}/#{file}" for file in files
+                    if not err? and files?
+                        fs.unlink "#{folder}/#{file}" for file in files
                 
         
                     
@@ -490,10 +496,11 @@ class Peer
                     console.log "### %s TICK ###", @id
                     @joinNeighbourhood () ->
                 , 5000
-                    
-        setTimeout () =>
-            @joinNeighbourhood joinEvery30Second
-        , 2000
+        
+        network.on 'ready', ()  =>
+            setTimeout () =>
+                @joinNeighbourhood joinEvery30Second
+            , 2000
         
         ###
         setInterval () =>
