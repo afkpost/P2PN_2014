@@ -16,7 +16,7 @@
 
   count = (require('os')).cpus().length - 1;
 
-  numberOfPeers = 50;
+  numberOfPeers = 99;
 
   numberOfPeers = (Math.floor((numberOfPeers - 1) / count)) * count + 1;
 

@@ -6,7 +6,7 @@ cluster = require 'cluster'
 async = require 'async'
 count = (require 'os').cpus().length - 1
 
-numberOfPeers = 50
+numberOfPeers = 99
 numberOfPeers = (Math.floor (numberOfPeers - 1) / count) * count + 1
 perProcess = (numberOfPeers - 1) / count
 caps = [1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 7, 10].reverse()
