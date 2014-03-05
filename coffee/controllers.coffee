@@ -28,8 +28,8 @@ class CLIController
         get = ([file], done) ->
             peer.getFile file, done
         
-        report = (done) ->
-            peer.report()
+        report = ([file], done) ->
+            peer.report(file)
             done()
         
         process.stdin.on "data", (data) ->
@@ -49,7 +49,7 @@ class CLIController
                     when constants.JOIN then peer.joinNeighbourhood done
                     when constants.FIND then search args, done
                     when constants.KFIND then kseach args, done
-                    when constants.REPORT then report done
+                    when constants.REPORT then report args, done
                     when constants.GET then get args, done
                     else
                         console.log "unknown command: #{ command }"

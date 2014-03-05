@@ -533,17 +533,27 @@
           }
         }
       };
-      this.report = function() {
-        var peer, _j, _len1, _results;
-        log("peer, query, , kquery, ");
-        log(", sent, received, sent, received");
-        network.getData(_this, ["query", "kquery"], log);
-        _results = [];
-        for (_j = 0, _len1 = knownPeers.length; _j < _len1; _j++) {
-          peer = knownPeers[_j];
-          _results.push(network.getData(peer, ["query", "kquery"], log));
-        }
-        return _results;
+      this.report = function(file) {
+        var buffer;
+        buffer = "";
+        buffer += "peer, query, , kquery, , found,\n";
+        buffer += ", sent, received, sent, received, sent, received\n";
+        return network.getData(_this, ["query", "kquery", "found"], function(data) {
+          var _this = this;
+          buffer += "" + data + "\n";
+          return async.each(knownPeers, function(peer, done) {
+            return network.getData(peer, ["query", "kquery", "found"], function(data) {
+              buffer += "" + data + "\n";
+              return done();
+            });
+          }, function() {
+            if (file != null) {
+              return fs.writeFile(file, buffer, function() {});
+            } else {
+              return log(buffer);
+            }
+          });
+        });
       };
       nextId = 0;
       sentQueries = [];
@@ -597,10 +607,10 @@
       this.ksearch = function(query, k, ttl) {
         var candidates, i, idx, peer, _j, _results;
         if (k == null) {
-          k = 1;
+          k = 4;
         }
         if (ttl == null) {
-          ttl = constants.TTL;
+          ttl = 256;
         }
         log("seaching for " + query + " with texas rangers");
         candidates = friends.copy();

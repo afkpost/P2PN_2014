@@ -41,8 +41,10 @@
         file = _arg[0];
         return peer.getFile(file, done);
       };
-      report = function(done) {
-        peer.report();
+      report = function(_arg, done) {
+        var file;
+        file = _arg[0];
+        peer.report(file);
         return done();
       };
       process.stdin.on("data", function(data) {
@@ -74,7 +76,7 @@
             case constants.KFIND:
               return kseach(args, done);
             case constants.REPORT:
-              return report(done);
+              return report(args, done);
             case constants.GET:
               return get(args, done);
             default:

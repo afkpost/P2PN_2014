@@ -6,16 +6,16 @@ cluster = require 'cluster'
 async = require 'async'
 count = (require 'os').cpus().length - 1
 
-numberOfPeers = 1001
+numberOfPeers = 50
 numberOfPeers = (Math.floor (numberOfPeers - 1) / count) * count + 1
 perProcess = (numberOfPeers - 1) / count
 caps = [1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 7, 10].reverse()
 if cluster.isMaster
     console.log "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-    console.log "@@@         Starting #{numberOfPeers} peers        @@@"
+    console.log "@@@          Starting #{numberOfPeers} peers         @@@"
     console.log "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
     
-    p = new Peer(8000, "Px", 10, [new FileLogger "logs/px.txt"])
+    p = new Peer(8000, "Px", 10, [console, new FileLogger "logs/px.txt"])
     new Controllers.CLI p
     for i in [0...count]
         cluster.fork
@@ -32,7 +32,9 @@ else
     allStarted = () -> remaining is 0
     
     startPeer = (done) ->
-        peer = new Peer fstPort + i, "P#{ i }", caps[i % caps.length], [new FileLogger "logs/p#{i}.txt"]
+        c = i
+        c = "0" + c if c < 10
+        peer = new Peer fstPort + i, "P#{c}", caps[i % caps.length], [new FileLogger "logs/p#{c}.txt"]
         new Controllers.Simple peer
         i++
         remaining--

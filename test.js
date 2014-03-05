@@ -16,7 +16,7 @@
 
   count = (require('os')).cpus().length - 1;
 
-  numberOfPeers = 1001;
+  numberOfPeers = 50;
 
   numberOfPeers = (Math.floor((numberOfPeers - 1) / count)) * count + 1;
 
@@ -26,9 +26,9 @@
 
   if (cluster.isMaster) {
     console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-    console.log("@@@         Starting " + numberOfPeers + " peers        @@@");
+    console.log("@@@          Starting " + numberOfPeers + " peers         @@@");
     console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
-    p = new Peer(8000, "Px", 10, [new FileLogger("logs/px.txt")]);
+    p = new Peer(8000, "Px", 10, [console, new FileLogger("logs/px.txt")]);
     new Controllers.CLI(p);
     for (i = _i = 0; 0 <= count ? _i < count : _i > count; i = 0 <= count ? ++_i : --_i) {
       cluster.fork({
@@ -47,8 +47,12 @@
       return remaining === 0;
     };
     startPeer = function(done) {
-      var peer;
-      peer = new Peer(fstPort + i, "P" + i, caps[i % caps.length], [new FileLogger("logs/p" + i + ".txt")]);
+      var c, peer;
+      c = i;
+      if (c < 10) {
+        c = "0" + c;
+      }
+      peer = new Peer(fstPort + i, "P" + c, caps[i % caps.length], [new FileLogger("logs/p" + c + ".txt")]);
       new Controllers.Simple(peer);
       i++;
       remaining--;

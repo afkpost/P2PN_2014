@@ -358,12 +358,21 @@ class Peer
                     startLoop()
         
         # reporting           
-        @report = () =>
-            log "peer, query, , kquery, "
-            log ", sent, received, sent, received"
-            network.getData this, ["query", "kquery"], log
-            for peer in knownPeers
-                network.getData peer, ["query", "kquery"], log
+        @report = (file) =>
+            buffer = ""
+            buffer += "peer, query, , kquery, , found,\n"
+            buffer += ", sent, received, sent, received, sent, received\n"
+            network.getData this, ["query", "kquery", "found"], (data) ->
+                buffer += "#{data}\n"
+                async.each knownPeers, (peer, done) =>
+                    network.getData peer, ["query", "kquery", "found"], (data) ->
+                        buffer += "#{data}\n"
+                        done()
+                , () ->
+                    if file?
+                        fs.writeFile file, buffer, () ->
+                    else
+                        log buffer
         
         # searching
         nextId = 0
@@ -398,7 +407,7 @@ class Peer
                         network.query peer, origin, query, details, removeOnError peer
                     forward peer for peer in friends when not (same peer, origin)
                     
-        @ksearch = (query, k = 1, ttl = constants.TTL) =>
+        @ksearch = (query, k = 4, ttl = 256) =>
             log "seaching for #{query} with texas rangers"
             candidates = friends.copy()
             id = nextId++
